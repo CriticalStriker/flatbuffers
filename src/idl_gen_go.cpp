@@ -76,16 +76,63 @@ static std::string GetGoPath() {
 #ifdef _WIN32
   return "I DONT KNOW HOW TO GET ENV ON WINDOWS";
 #else
-  return std::getenv("GOPATH");
+  try {
+    return std::getenv("GOPATH");
+  } catch (std::exception &e) {
+    return "";
+  }
 #endif
 }
 
-static std::string GenPackagePath(const Namespace &ns) {
+std::string GenRelativeImportPath(const Namespace &cwd, const Namespace &target) {
+  auto v1 = cwd.components;
+  auto v2 = target.components;
+  if (v1.size() == 0 || v2.size() == 0) {
+    return "";
+  }
+  
+  auto slen = v2.size();
+  if (slen > v1.size()) {
+    slen = v1.size();
+  }
+  
+  unsigned long idx = -1;
+  for (unsigned long i = 0; i < slen; i++) {
+    if (v1[i] == v2[i]) {
+      idx = i;
+    }
+  }
+  
+  std::string path = "";
+  for (unsigned long i = 0; i < v1.size()-(idx+1); i++) {
+    path += "../";
+  }
+  
+  if (path.length() > 0 && slen == idx+1) {
+    return path.substr(0, path.length()-1);
+  }
+  
+  if (path.length() == 0 ) {
+    path = "./";
+  }
+  
+  for (auto i = idx + 1; i < v2.size(); i++) {
+    path += v2[i] + "/";
+  }
+  
+  return path.substr(0, path.length()-1);
+}
+
+static std::string GenPackagePath(const Namespace &base, const Namespace &ns) {
   std::string name;
-  auto gopath = GetGoPath() + "/src/";
+  auto gopath = GetGoPath();
+  if (gopath.length() == 0) {
+    throw std::domain_error("The go generator needs to set GOPATH environment variable. Please set GOPATH and try again!");
+  }
+  gopath += "/src/";
   auto cwd = AbsolutePath(".");
   for (auto v: ns.components) {
-    name += kPathSeparator + v;
+    name += kPosixPathSeparator + v;
   }
   if (cwd.compare(0, gopath.length(), gopath) == 0) {
     auto path = cwd.substr(gopath.length()) + name;
@@ -94,8 +141,8 @@ static std::string GenPackagePath(const Namespace &ns) {
 #endif
     return path;
   }
-  
-  return std::string(".") + name;
+    
+    return GenRelativeImportPath(base, ns);
 }
 
 // Most field accessors need to retrieve and test the field offset first,
@@ -833,7 +880,7 @@ class GoGenerator : public BaseGenerator {
     }
     for (auto &n: fstate_ptr->import_namespaces) {
       auto pkg = LastNamespacePart(n);
-      auto path = GenPackagePath(n);
+      auto path = GenPackagePath(fstate_ptr->file_name_space, n);
       code += "\t" + pkg + " \"" + path + "\"\n";
     }
     code += ")\n\n";
