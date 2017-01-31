@@ -1,0 +1,6 @@
+include "monster_test.fbs";
+
+namespace MyGame.Example2;
+table Player {
+  target:MyGame.Example.Monster;
+}
