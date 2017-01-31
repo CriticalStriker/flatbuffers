@@ -4,7 +4,7 @@ package Example2
 
 import (
 	flatbuffers "github.com/google/flatbuffers/go"
-	Example "github.com/google/flatbuffers/tests/MyGame/Example"
+	Example "github.com/dictav/flatbuffers/tests/MyGame/Example"
 )
 
 type Player struct {

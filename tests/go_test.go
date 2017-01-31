@@ -17,7 +17,6 @@
 package main
 
 import (
-	example "MyGame/Example" // refers to generated code
 	"bytes"
 	"flag"
 	"fmt"
@@ -27,6 +26,8 @@ import (
 	"sort"
 	"testing"
 
+	example "./MyGame/Example"   // refers to generated code
+	example2 "./MyGame/Example2" // check nested namespace import
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
@@ -53,6 +54,8 @@ func init() {
 		fmt.Fprintf(os.Stderr, "cpp_data argument is required\n")
 		os.Exit(1)
 	}
+
+	_ = example2.Player{}
 }
 
 // Store specific byte patterns in these variables for the fuzzer. These

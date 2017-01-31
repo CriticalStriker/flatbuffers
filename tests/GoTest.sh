@@ -17,25 +17,22 @@
 pushd "$(dirname $0)" >/dev/null
 test_dir="$(pwd)"
 go_path=${test_dir}/go_gen
-go_src=${go_path}/src
+go_test_dir=${go_path}/src/flatbufferstest
+flatc=${test_dir}/../flatc
+
+export GOPATH=$go_path
+
+echo "GOPATH=${GOPATH}"
+
+# Install dependent packages to $go_path
+echo -n "Installing dependent packages to $GOPATH ..."
+go get github.com/google/flatbuffers/go
+go get golang.org/x/net/context
+go get google.golang.org/grpc
+echo " done"
 
 # Emit Go code for the example schema in the test dir:
-../flatc -g monster_test.fbs
-
-# Go requires a particular layout of files in order to link multiple packages.
-# Copy flatbuffer Go files to their own package directories to compile the
-# test binary:
-mkdir -p ${go_src}/MyGame/Example
-mkdir -p ${go_src}/github.com/google/flatbuffers/go
-mkdir -p ${go_src}/flatbuffers_test
-
-cp -a MyGame/Example/*.go ./go_gen/src/MyGame/Example/
-cp -a ../go/* ./go_gen/src/github.com/google/flatbuffers/go
-cp -a ./go_test.go ./go_gen/src/flatbuffers_test/
-
-# Install dependent packages
-GOPATH=${go_path} go get golang.org/x/net/context
-GOPATH=${go_path} go get google.golang.org/grpc
+$flatc -g monster_test.fbs player_test.fbs
 
 # Run tests with necessary flags.
 # Developers may wish to see more detail by appending the verbosity flag
@@ -44,24 +41,65 @@ GOPATH=${go_path} go get google.golang.org/grpc
 # Developers may also wish to run benchmarks, which may be achieved with the
 # flag -test.bench and the wildcard regexp ".":
 #   go -test -test.bench=. ...
-GOPATH=${go_path} go test flatbuffers_test \
-                     --test.coverpkg=github.com/google/flatbuffers/go \
-                     --cpp_data=${test_dir}/monsterdata_test.mon \
-                     --out_data=${test_dir}/monsterdata_go_wire.mon \
-                     --test.bench=. \
-                     --test.benchtime=3s \
-                     --fuzz=true \
-                     --fuzz_fields=4 \
-                     --fuzz_objects=10000
+go test go_test.go \
+  --test.coverpkg=github.com/google/flatbuffers/go \
+  --cpp_data=monsterdata_test.mon \
+  --out_data=monsterdata_go_wire.mon \
+  --test.bench=. \
+  --test.benchtime=3s \
+  --fuzz=true \
+  --fuzz_fields=4 \
+  --fuzz_objects=10000
 
 GO_TEST_RESULT=$?
-rm -rf ${go_path}/{pkg,src}
+
 if [[ $GO_TEST_RESULT  == 0 ]]; then
     echo "OK: Go tests passed."
 else
     echo "KO: Go tests failed."
     exit 1
 fi
+
+echo ""
+
+# Test under the Go directory layout
+mkdir -p $go_path/src/flatbufferstest
+pushd $go_path/src/flatbufferstest > /dev/null
+
+# Emit Go code for the example schema in the flatbufferstest dir:
+$flatc -g ${test_dir}/monster_test.fbs ${test_dir}/player_test.fbs
+
+cat << EOF > go_import_test.go
+package main
+
+import (
+	"testing"
+	example "flatbufferstest/MyGame/Example"
+	example2 "flatbufferstest/MyGame/Example2"
+)
+
+func TestImport(t *testing.T) {
+	_ = example.Monster{}
+	_ = example2.Player{}
+}
+EOF
+go test go_import_test.go
+GO_TEST_RESULT=$?
+
+if [[ $GO_TEST_RESULT  == 0 ]]; then
+    echo "OK: Go import tests passed."
+else
+    echo "KO: Go import tests failed."
+    exit 1
+fi
+
+popd > /dev/null
+
+# clean
+git checkout MyGame
+rm -rf $go_path
+
+echo ""
 
 NOT_FMT_FILES=$(gofmt -l MyGame)
 if [[ ${NOT_FMT_FILES} != "" ]]; then
