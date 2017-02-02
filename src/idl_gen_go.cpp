@@ -33,6 +33,7 @@
 #endif
 
 namespace flatbuffers {
+
 namespace go {
 class GoGenerator : public BaseGenerator {
  public:
@@ -40,9 +41,14 @@ class GoGenerator : public BaseGenerator {
         const std::string &file_name)
   : BaseGenerator(parser, path, file_name, "" /* not used*/,
           "" /* not used */){};
-  bool generate() {
+  bool generate() override {
+    if (!checkMultipleBaseName()) {
+      throw std::logic_error("Multiple base names can not be mixed in Go generator.");
+    }
     for (auto it = parser_.enums_.vec.begin(); it != parser_.enums_.vec.end();
        ++it) {
+      cur_name_space_ = (*it)->defined_namespace;
+      additional_import_namespaces_.clear();
       std::string enumcode;
       GenEnum(**it, &enumcode);
       if (!SaveType(**it, enumcode, false)) return false;
@@ -50,6 +56,8 @@ class GoGenerator : public BaseGenerator {
     
     for (auto it = parser_.structs_.vec.begin();
        it != parser_.structs_.vec.end(); ++it) {
+      cur_name_space_ = (*it)->defined_namespace;
+      additional_import_namespaces_.clear();
       std::string declcode;
       GenStruct(**it, &declcode);
       if (!SaveType(**it, declcode, true)) return false;
@@ -59,17 +67,146 @@ class GoGenerator : public BaseGenerator {
   }
     
  private:
+  std::vector<Namespace> additional_import_namespaces_;
+  const Namespace *cur_name_space_;
+  const Namespace *CurrentNameSpace() const override {
+    return cur_name_space_;
+  }
+
+  bool checkMultipleBaseName() {
+
+    std::string base_name = "";
+    for (auto it = parser_.enums_.vec.begin(); it != parser_.enums_.vec.end(); ++it) {
+      auto base = (*it)->defined_namespace->base;
+      auto go_it = base.find("Go");
+
+      if (go_it == base.end() || go_it->second.length() == 0) {
+        continue;
+      }
+
+      auto bn = go_it->second;
+      if (base_name.length() == 0) {
+        base_name = bn;
+        continue;
+      }
+
+      if (bn != base_name) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  std::string GenTypeName(const Definition &def) {
+    auto v1 = def.defined_namespace->components;
+    if (v1.size() == 0) {
+      return def.name;
+    }
+
+    auto v2 = cur_name_space_->components;
+    if (v1.size() == v2.size() && std::equal(v1.cbegin(), v1.cend(), v2.cbegin())) {
+      return def.name;
+    }
+
+    bool includes_namespace = false;
+    for (auto n: additional_import_namespaces_) {
+      auto v3 = n.components;
+      if (v1.size() == v3.size() && std::equal(v1.cbegin(), v1.cend(), v3.cbegin())) {
+        includes_namespace = true;
+        break;
+      }
+    }
+    if (!includes_namespace) {
+      additional_import_namespaces_.push_back(*def.defined_namespace);
+    }
+    return v1.back() + "." + def.name;
+  }
+
+  std::string GenPackagePath(const Namespace &ns) {
+    std::string name;
+    auto base = ns.base.find("Go");
+    auto cur_base = cur_name_space_->base.find("Go");
+    if (base == ns.base.end() && cur_base == cur_name_space_->base.end()) {
+      return GenRelativeImportPath(ns);
+    }
+
+    if (base == ns.base.end() && cur_base != cur_name_space_->base.end()) {
+      base = cur_base;
+    }
+
+    for (unsigned long i = 0; i < ns.components.size(); i++) {
+      if (i > 0) {
+        name += kPosixPathSeparator;
+      }
+      name += ns.components[i];
+    }
+
+    auto path = base->second + "/" + path_ + name;
+#ifdef _WIN32
+    replace(path.begin(), path.end(), kPathSeparator, kPosixPathSeparator);
+#endif
+    return path;
+
+  }
+
+  std::string GenRelativeImportPath(const Namespace &ns) {
+    auto v1 = cur_name_space_->components;
+    auto v2 = ns.components;
+    if (v1.size() == 0 || v2.size() == 0) {
+      return "";
+    }
+
+    auto slen = v2.size();
+    if (slen > v1.size()) {
+      slen = v1.size();
+    }
+
+    unsigned long idx = -1;
+    for (unsigned long i = 0; i < slen; i++) {
+      if (v1[i] == v2[i]) {
+        idx = i;
+      }
+    }
+
+    std::string path = "";
+    for (unsigned long i = 0; i < v1.size()-(idx+1); i++) {
+      path += "../";
+    }
+
+    if (path.length() > 0 && slen == idx+1) {
+      return path.substr(0, path.length()-1);
+    }
+
+    if (path.length() == 0 ) {
+      path = "./";
+    }
+
+    for (auto i = idx + 1; i < v2.size(); i++) {
+      path += v2[i] + "/";
+    }
+
+    return path.substr(0, path.length()-1);
+  }
+
   // Begin by declaring namespace and imports.
   void BeginFile(const std::string name_space_name, const bool needs_imports,
            std::string *code_ptr) {
     std::string &code = *code_ptr;
     code = code + "// " + FlatBuffersGeneratedWarning();
     code += "package " + name_space_name + "\n\n";
-    if (needs_imports) {
-      code += "import (\n";
-      code += "\tflatbuffers \"github.com/google/flatbuffers/go\"\n";
-      code += ")\n\n";
+    if (!needs_imports && additional_import_namespaces_.size() == 0) {
+      return;
     }
+    code += "import (\n";
+    if (needs_imports) {
+      code += "\tflatbuffers \"github.com/google/flatbuffers/go\"\n";
+    }
+    for (auto &n: additional_import_namespaces_) {
+      auto pkg = LastNamespacePart(n);
+      auto path = GenPackagePath(n);
+      code += "\t" + pkg + " \"" + path + "\"\n";
+    }
+    code += ")\n\n";
   }
   
   // Save out the generated code for a Go Table type.
@@ -733,7 +870,7 @@ class GoGenerator : public BaseGenerator {
       case BASE_TYPE_VECTOR:
         return GenTypeGet(type.VectorType());
       case BASE_TYPE_STRUCT:
-        return type.struct_def->name;
+        return GenTypeName(*type.struct_def);
       case BASE_TYPE_UNION:
         // fall through
       default:

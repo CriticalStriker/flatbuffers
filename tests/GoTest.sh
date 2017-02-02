@@ -33,6 +33,10 @@ cp -a MyGame/Example/*.go ./go_gen/src/MyGame/Example/
 cp -a ../go/* ./go_gen/src/github.com/google/flatbuffers/go
 cp -a ./go_test.go ./go_gen/src/flatbuffers_test/
 
+# Install dependent packages
+GOPATH=${go_path} go get golang.org/x/net/context
+GOPATH=${go_path} go get google.golang.org/grpc 
+
 # Run tests with necessary flags.
 # Developers may wish to see more detail by appending the verbosity flag
 # -test.v to arguments for this command, as in:
