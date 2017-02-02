@@ -1510,6 +1510,18 @@ CheckedError Parser::ParseNamespace() {
       EXPECT(kTokenIdentifier);
       if (Is('.')) NEXT() else break;
     }
+    if (Is('(')) {
+      NEXT()
+        for(;;) {
+          auto key = attribute_;
+          EXPECT(kTokenIdentifier);
+          EXPECT(':');
+          ns->base[key] = attribute_;
+          EXPECT(kTokenStringConstant);
+          if (Is(')')) break; else NEXT();
+        }
+      EXPECT(')')
+    }
   }
   EXPECT(';');
   return NoError();
@@ -1590,13 +1602,13 @@ CheckedError Parser::ParseProtoDecl() {
     ECHECK(ParseProtoCurliesOrIdent());
   } else {
     return Error("don\'t know how to parse .proto declaration starting with " +
-          TokenToStringId(token_));
+        TokenToStringId(token_));
   }
   return NoError();
 }
 
 CheckedError Parser::ParseProtoFields(StructDef *struct_def, bool isextend,
-                                      bool inside_oneof) {
+    bool inside_oneof) {
   EXPECT('{');
   while (token_ != '}') {
     if (attribute_ == "message" || attribute_ == "extend" ||
@@ -1849,12 +1861,12 @@ CheckedError Parser::SkipJsonString() {
 }
 
 bool Parser::Parse(const char *source, const char **include_paths,
-                   const char *source_filename) {
+    const char *source_filename) {
   return !DoParse(source, include_paths, source_filename).Check();
 }
 
 CheckedError Parser::DoParse(const char *source, const char **include_paths,
-                             const char *source_filename) {
+    const char *source_filename) {
   file_being_parsed_ = source_filename ? source_filename : "";
   if (source_filename &&
       included_files_.find(source_filename) == included_files_.end()) {
@@ -1880,15 +1892,15 @@ CheckedError Parser::DoParse(const char *source, const char **include_paths,
     if (opts.proto_mode &&
         (attribute_ == "option" || attribute_ == "syntax" ||
          attribute_ == "package")) {
-        ECHECK(ParseProtoDecl());
+      ECHECK(ParseProtoDecl());
     } else if (Is(kTokenNativeInclude)) {
       NEXT();
       native_included_files_.emplace_back(attribute_);
       EXPECT(kTokenStringConstant);
     } else if (Is(kTokenInclude) ||
-               (opts.proto_mode &&
-                attribute_ == "import" &&
-                Is(kTokenIdentifier))) {
+        (opts.proto_mode &&
+         attribute_ == "import" &&
+         Is(kTokenIdentifier))) {
       NEXT();
       if (opts.proto_mode && attribute_ == "public") NEXT();
       auto name = attribute_;
@@ -1941,7 +1953,7 @@ CheckedError Parser::DoParse(const char *source, const char **include_paths,
       uoffset_t toff;
       ECHECK(ParseTable(*root_struct_def_, nullptr, &toff));
       builder_.Finish(Offset<Table>(toff),
-                file_identifier_.length() ? file_identifier_.c_str() : nullptr);
+          file_identifier_.length() ? file_identifier_.c_str() : nullptr);
     } else if (token_ == kTokenEnum) {
       ECHECK(ParseEnum(false, nullptr));
     } else if (token_ == kTokenUnion) {
@@ -1963,8 +1975,8 @@ CheckedError Parser::DoParse(const char *source, const char **include_paths,
       if (file_identifier_.length() !=
           FlatBufferBuilder::kFileIdentifierLength)
         return Error("file_identifier must be exactly " +
-              NumToString(FlatBufferBuilder::kFileIdentifierLength) +
-              " characters");
+            NumToString(FlatBufferBuilder::kFileIdentifierLength) +
+            " characters");
       EXPECT(';');
     } else if (token_ == kTokenFileExtension) {
       NEXT();
@@ -1994,8 +2006,8 @@ CheckedError Parser::DoParse(const char *source, const char **include_paths,
     auto &enum_def = **it;
     if (enum_def.is_union) {
       for (auto val_it = enum_def.vals.vec.begin();
-           val_it != enum_def.vals.vec.end();
-           ++val_it) {
+          val_it != enum_def.vals.vec.end();
+          ++val_it) {
         auto &val = **val_it;
         if (val.struct_def && val.struct_def->fixed)
           return Error("only tables can be union elements: " + val.name);
@@ -2031,8 +2043,8 @@ std::set<std::string> Parser::GetIncludedFilesRecursive(
 // Schema serialization functionality:
 
 template<typename T> bool compareName(const T* a, const T* b) {
-    return a->defined_namespace->GetFullyQualifiedName(a->name)
-        < b->defined_namespace->GetFullyQualifiedName(b->name);
+  return a->defined_namespace->GetFullyQualifiedName(a->name)
+    < b->defined_namespace->GetFullyQualifiedName(b->name);
 }
 
 template<typename T> void AssignIndices(const std::vector<T *> &defvec) {
@@ -2059,95 +2071,95 @@ void Parser::Serialize() {
     (*it)->serialized_location = offset.o;
   }
   auto schema_offset = reflection::CreateSchema(
-                         builder_,
-                         builder_.CreateVectorOfSortedTables(&object_offsets),
-                         builder_.CreateVectorOfSortedTables(&enum_offsets),
-                         builder_.CreateString(file_identifier_),
-                         builder_.CreateString(file_extension_),
-                         root_struct_def_
-                           ? root_struct_def_->serialized_location
-                           : 0);
+      builder_,
+      builder_.CreateVectorOfSortedTables(&object_offsets),
+      builder_.CreateVectorOfSortedTables(&enum_offsets),
+      builder_.CreateString(file_identifier_),
+      builder_.CreateString(file_extension_),
+      root_struct_def_
+      ? root_struct_def_->serialized_location
+      : 0);
   builder_.Finish(schema_offset, reflection::SchemaIdentifier());
 }
 
 Offset<reflection::Object> StructDef::Serialize(FlatBufferBuilder *builder,
-                                                const Parser &parser) const {
+    const Parser &parser) const {
   std::vector<Offset<reflection::Field>> field_offsets;
   for (auto it = fields.vec.begin(); it != fields.vec.end(); ++it) {
     field_offsets.push_back(
-      (*it)->Serialize(builder,
-                       static_cast<uint16_t>(it - fields.vec.begin()), parser));
+        (*it)->Serialize(builder,
+          static_cast<uint16_t>(it - fields.vec.begin()), parser));
   }
   auto qualified_name = defined_namespace->GetFullyQualifiedName(name);
   return reflection::CreateObject(*builder,
-                                  builder->CreateString(qualified_name),
-                                  builder->CreateVectorOfSortedTables(
-                                    &field_offsets),
-                                  fixed,
-                                  static_cast<int>(minalign),
-                                  static_cast<int>(bytesize),
-                                  SerializeAttributes(builder, parser));
+      builder->CreateString(qualified_name),
+      builder->CreateVectorOfSortedTables(
+        &field_offsets),
+      fixed,
+      static_cast<int>(minalign),
+      static_cast<int>(bytesize),
+      SerializeAttributes(builder, parser));
 }
 
 Offset<reflection::Field> FieldDef::Serialize(FlatBufferBuilder *builder,
-                                              uint16_t id,
-                                              const Parser &parser) const {
+    uint16_t id,
+    const Parser &parser) const {
   return reflection::CreateField(*builder,
-                                 builder->CreateString(name),
-                                 value.type.Serialize(builder),
-                                 id,
-                                 value.offset,
-                                 IsInteger(value.type.base_type)
-                                   ? StringToInt(value.constant.c_str())
-                                   : 0,
-                                 IsFloat(value.type.base_type)
-                                   ? strtod(value.constant.c_str(), nullptr)
-                                   : 0.0,
-                                 deprecated,
-                                 required,
-                                 key,
-                                 SerializeAttributes(builder, parser));
+      builder->CreateString(name),
+      value.type.Serialize(builder),
+      id,
+      value.offset,
+      IsInteger(value.type.base_type)
+      ? StringToInt(value.constant.c_str())
+      : 0,
+      IsFloat(value.type.base_type)
+      ? strtod(value.constant.c_str(), nullptr)
+      : 0.0,
+      deprecated,
+      required,
+      key,
+      SerializeAttributes(builder, parser));
   // TODO: value.constant is almost always "0", we could save quite a bit of
   // space by sharing it. Same for common values of value.type.
 }
 
 Offset<reflection::Enum> EnumDef::Serialize(FlatBufferBuilder *builder,
-                                            const Parser &parser) const {
+    const Parser &parser) const {
   std::vector<Offset<reflection::EnumVal>> enumval_offsets;
   for (auto it = vals.vec.begin(); it != vals.vec.end(); ++it) {
     enumval_offsets.push_back((*it)->Serialize(builder));
   }
   auto qualified_name = defined_namespace->GetFullyQualifiedName(name);
   return reflection::CreateEnum(*builder,
-                                builder->CreateString(qualified_name),
-                                builder->CreateVector(enumval_offsets),
-                                is_union,
-                                underlying_type.Serialize(builder),
-                                SerializeAttributes(builder, parser));
+      builder->CreateString(qualified_name),
+      builder->CreateVector(enumval_offsets),
+      is_union,
+      underlying_type.Serialize(builder),
+      SerializeAttributes(builder, parser));
 }
 
 Offset<reflection::EnumVal> EnumVal::Serialize(FlatBufferBuilder *builder) const
-                                                                               {
+{
   return reflection::CreateEnumVal(*builder,
-                                   builder->CreateString(name),
-                                   value,
-                                   struct_def
-                                     ? struct_def->serialized_location
-                                     : 0);
+      builder->CreateString(name),
+      value,
+      struct_def
+      ? struct_def->serialized_location
+      : 0);
 }
 
 Offset<reflection::Type> Type::Serialize(FlatBufferBuilder *builder) const {
   return reflection::CreateType(*builder,
-                                static_cast<reflection::BaseType>(base_type),
-                                static_cast<reflection::BaseType>(element),
-                                struct_def ? struct_def->index :
-                                             (enum_def ? enum_def->index : -1));
+      static_cast<reflection::BaseType>(base_type),
+      static_cast<reflection::BaseType>(element),
+      struct_def ? struct_def->index :
+      (enum_def ? enum_def->index : -1));
 }
 
 flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<
-  reflection::KeyValue>>>
-    Definition::SerializeAttributes(FlatBufferBuilder *builder,
-                                    const Parser &parser) const {
+reflection::KeyValue>>>
+Definition::SerializeAttributes(FlatBufferBuilder *builder,
+    const Parser &parser) const {
   std::vector<flatbuffers::Offset<reflection::KeyValue>> attrs;
   for (auto kv = attributes.dict.begin(); kv != attributes.dict.end(); ++kv) {
     auto it = parser.known_attributes_.find(kv->first);
@@ -2155,8 +2167,8 @@ flatbuffers::Offset<flatbuffers::Vector<flatbuffers::Offset<
     if (!it->second) {  // Custom attribute.
       attrs.push_back(
           reflection::CreateKeyValue(*builder, builder->CreateString(kv->first),
-                                     builder->CreateString(
-                                         kv->second->constant)));
+            builder->CreateString(
+              kv->second->constant)));
     }
   }
   if (attrs.size()) {
@@ -2170,11 +2182,11 @@ std::string Parser::ConformTo(const Parser &base) {
   for (auto sit = structs_.vec.begin(); sit != structs_.vec.end(); ++sit) {
     auto &struct_def = **sit;
     auto qualified_name =
-        struct_def.defined_namespace->GetFullyQualifiedName(struct_def.name);
+      struct_def.defined_namespace->GetFullyQualifiedName(struct_def.name);
     auto struct_def_base = base.structs_.Lookup(qualified_name);
     if (!struct_def_base) continue;
     for (auto fit = struct_def.fields.vec.begin();
-             fit != struct_def.fields.vec.end(); ++fit) {
+        fit != struct_def.fields.vec.end(); ++fit) {
       auto &field = **fit;
       auto field_base = struct_def_base->fields.Lookup(field.name);
       if (field_base) {
@@ -2189,7 +2201,7 @@ std::string Parser::ConformTo(const Parser &base) {
         // But we should check if there is a field that has the same offset
         // but is incompatible (in the case of field renaming).
         for (auto fbit = struct_def_base->fields.vec.begin();
-                 fbit != struct_def_base->fields.vec.end(); ++fbit) {
+            fbit != struct_def_base->fields.vec.end(); ++fbit) {
           field_base = *fbit;
           if (field.value.offset == field_base->value.offset) {
             if (!EqualByName(field.value.type, field_base->value.type))
@@ -2203,11 +2215,11 @@ std::string Parser::ConformTo(const Parser &base) {
   for (auto eit = enums_.vec.begin(); eit != enums_.vec.end(); ++eit) {
     auto &enum_def = **eit;
     auto qualified_name =
-        enum_def.defined_namespace->GetFullyQualifiedName(enum_def.name);
+      enum_def.defined_namespace->GetFullyQualifiedName(enum_def.name);
     auto enum_def_base = base.enums_.Lookup(qualified_name);
     if (!enum_def_base) continue;
     for (auto evit = enum_def.vals.vec.begin();
-             evit != enum_def.vals.vec.end(); ++evit) {
+        evit != enum_def.vals.vec.end(); ++evit) {
       auto &enum_val = **evit;
       auto enum_val_base = enum_def_base->vals.Lookup(enum_val.name);
       if (enum_val_base) {

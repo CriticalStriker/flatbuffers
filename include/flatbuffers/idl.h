@@ -193,6 +193,7 @@ template<typename T> class SymbolTable {
 
 // A name space, as set in the schema.
 struct Namespace {
+  std::map<std::string, std::string> base;
   std::vector<std::string> components;
 
   // Given a (potentally unqualified) name, return the "fully qualified" name
