@@ -76,6 +76,7 @@ class FlatCompiler {
 
   std::string GetUsageString(const char* program_name) const;
 
+  static bool hasBaseNamespace(Generator generator);
  private:
   void ParseFile(flatbuffers::Parser &parser,
                  const std::string &filename,

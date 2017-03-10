@@ -378,6 +378,8 @@ struct IDLOptions {
   // for code generation.
   unsigned long lang_to_generate;
 
+  std::string *base_namespace;
+    
   IDLOptions()
     : strict_json(false),
       skip_js_exports(false),
@@ -399,7 +401,8 @@ struct IDLOptions {
       allow_non_utf8(false),
       binary_schema_comments(false),
       lang(IDLOptions::kJava),
-      lang_to_generate(0) {}
+      lang_to_generate(0),
+      base_namespace(nullptr) {}
 };
 
 // This encapsulates where the parser is in the current source file.

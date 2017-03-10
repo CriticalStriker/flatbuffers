@@ -13,6 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+#include <sstream>
+#include <iostream>
 
 #include "flatbuffers/flatc.h"
 
@@ -55,7 +57,7 @@ std::string FlatCompiler::GetUsageString(const char* program_name) const {
     const char *name = g.generator_opt_short ? g.generator_opt_short : "  ";
     const char *help = g.generator_help;
 
-    ss << "  " << full_name.str() << " " << name << "    " << help << ".\n";
+    ss << "  " << full_name.str() << " " << name << (hasBaseNamespace(g) ? "[=NAMESPACE] " : "    ") << help << ".\n";
   }
   ss <<
       "  -o PATH            Prefix PATH to all generated files.\n"
@@ -127,6 +129,7 @@ int FlatCompiler::Compile(int argc, const char** argv) {
   std::vector<bool> generator_enabled(params_.num_generators, false);
   size_t binary_files_from = std::numeric_limits<size_t>::max();
   std::string conform_to_schema;
+  std::vector<std::string*> generator_base_namespace(params_.num_generators, nullptr);
 
   for (int argi = 0; argi < argc; argi++) {
     std::string arg = argv[argi];
@@ -209,12 +212,21 @@ int FlatCompiler::Compile(int argc, const char** argv) {
         opts.binary_schema_comments = true;
       } else {
         for (size_t i = 0; i < params_.num_generators; ++i) {
-          if (arg == params_.generators[i].generator_opt_long ||
-              (params_.generators[i].generator_opt_short &&
-               arg == params_.generators[i].generator_opt_short)) {
+          auto g = params_.generators[i];
+            if (hasBaseNamespace(g)) {
+                std::istringstream strm(arg);
+                std::getline(strm, arg, '=');
+                std::string ns;
+                if (std::getline(strm, ns)) {
+                    generator_base_namespace[i] = new std::string(ns);
+                }
+            }
+          if (arg == g.generator_opt_long ||
+              (g.generator_opt_short &&
+               arg == g.generator_opt_short)) {
             generator_enabled[i] = true;
             any_generator = true;
-            opts.lang_to_generate |= params_.generators[i].lang;
+            opts.lang_to_generate |= g.lang;
             goto found;
           }
         }
@@ -308,6 +320,7 @@ int FlatCompiler::Compile(int argc, const char** argv) {
 
       for (size_t i = 0; i < params_.num_generators; ++i) {
         parser->opts.lang = params_.generators[i].lang;
+        parser->opts.base_namespace = generator_base_namespace[i];
         if (generator_enabled[i]) {
           if (!print_make_rules) {
             flatbuffers::EnsureDirExists(output_path);
@@ -347,5 +360,12 @@ int FlatCompiler::Compile(int argc, const char** argv) {
   }
   return 0;
 }
-
+    bool FlatCompiler::hasBaseNamespace(flatbuffers::FlatCompiler::Generator generator) {
+        switch(generator.lang) {
+            case IDLOptions::kGo:
+                return true;
+            default:
+                return false;
+        }
+    }
 }  // namespace flatbuffers
