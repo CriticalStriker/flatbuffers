@@ -33,6 +33,8 @@ cp -a MyGame/Example/*.go ./go_gen/src/MyGame/Example/
 cp -a ../go/* ./go_gen/src/github.com/google/flatbuffers/go
 cp -a ./go_test.go ./go_gen/src/flatbuffers_test/
 
+GOPATH=${go_path} go get MyGame/Example
+
 # Run tests with necessary flags.
 # Developers may wish to see more detail by appending the verbosity flag
 # -test.v to arguments for this command, as in:
